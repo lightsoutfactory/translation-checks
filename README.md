@@ -67,7 +67,10 @@ On the sites we run, every translation goes through checks like these before it 
 ## What it cannot check
 
 Meaning. In our own test run a model translated "You are offline" into well-formed Khmer that says "you are online",
-and every check above passed it. Have someone who reads the language look at the strings that matter most.
+and every check above passed it. Polyglot 1.3.0 has the model read each translation again for exactly this; on our
+store's own pages that second reading found a Czech refund answer that said the opposite of the English
+([field note](https://lightsoutfactory.ai/field-notes/read-for-meaning/)). It misses things too, so have someone who
+reads the language look at the strings that matter most.
 
 ## Where these checks come from
 
