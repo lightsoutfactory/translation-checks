@@ -79,6 +79,31 @@ class TestChecks(unittest.TestCase):
         self.assertEqual(t.check(src, "{count, plural, one{# Tag} other{# Tage}} übrig", "de"), [])
         self.assertEqual(t.check("Free for 14 days", "41 Tage kostenlos", "de", numbers=False), [])
 
+    def test_plural_forms_that_cover_several_numbers(self):
+        src = "{count, plural, one{One day left} other{# days left}}"
+        # Russian "one" is also 21 and 31: "один день" would be shown to someone with 21 days left
+        ru_bad = "{count, plural, one{Остался один день} few{Осталось # дня} many{Осталось # дней} other{Осталось # дня}}"
+        self.assertIn("the one form is used for 1, 21, 31, 41..., so it must not say one: write it like the other form, "
+                      "with # where the number goes", t.check(src, ru_bad, "ru"))
+        ru = "{count, plural, one{Остался # день} few{Осталось # дня} many{Осталось # дней} other{Осталось # дня}}"
+        self.assertEqual(t.check(src, ru, "ru"), [])
+        # German "one" is only 1; French "one" is 0 and 1, unless 0 has a branch of its own
+        self.assertEqual(t.check(src, "{count, plural, one{Noch ein Tag} other{Noch # Tage}}", "de"), [])
+        self.assertIn("the one form is used for 0, 1, so it must not say one: write it like the other form, with # where "
+                      "the number goes",
+                      t.check(src, "{count, plural, one{Un jour restant} other{# jours restants}}", "fr"))
+        src0 = "{count, plural, =0{No days left} one{One day left} other{# days left}}"
+        fr0 = "{count, plural, =0{Plus aucun jour} one{Un jour restant} other{# jours restants}}"
+        self.assertEqual(t.check(src0, fr0, "fr"), [])
+        # the variable counts as the number too; an English "other" without the number asks for nothing
+        src_var = "{count, plural, one{One file} other{{count} files}}"
+        self.assertEqual(t.check(src_var, "{count, plural, one{{count} файл} few{{count} файла} many{{count} файлов} "
+                                          "other{{count} файла}}", "ru"), [])
+        self.assertEqual(t.check("{count, plural, one{a file} other{files}}",
+                                 "{count, plural, one{файл} few{файла} many{файлов} other{файла}}", "ru"), [])
+        self.assertEqual(t.plural_numbers("sl", "two"), [2, 102, 202, 302, 402])
+        self.assertEqual(t.plural_numbers("fr", "one", explicit={0}), [1])
+
     def test_kept_names(self):
         self.assertEqual(t.check("Pressing the button", "Drücken der Taste", "de", keep=["Press"]), [])
         self.assertEqual(t.check("Store Dock kits", "Store-Dock-Kits", "de", keep=["Store Dock"]), [])

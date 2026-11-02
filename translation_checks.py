@@ -12,7 +12,9 @@ The checks, per string:
 - placeholders: every printf (%s, %d, %1$s, %.2f, %(name)s), brace ({name}, {0}, {{name}}), ${name} and :name
   placeholder, every HTML or XML tag, every \\n, every URL, inline `code`, Markdown link target and | of the source
   appears in the translation as often as in the source; nothing new appears;
-- ICU messages ({count, plural, one {...} other {...}}): the same variables and the same plural/select keywords;
+- ICU messages ({count, plural, one {...} other {...}}): the same variables and the same plural/select keywords, and
+  a branch for a category that covers several numbers shows the number (# or the variable) when the English "other"
+  branch does: Russian "one" is also 21 and 31, French "one" is also 0, so "one {One day left}" needs # there;
 - every term you keep (names, brands) is still there exactly as written, where the source has it as a word in its
   own case ("Pressing" does not contain the name "Press"); a translation may join it into a compound
   ("Store-Dock-Kits");
@@ -40,7 +42,7 @@ import re
 import sys
 import unicodedata
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 
 # code: (English name, script, plural categories)
@@ -123,6 +125,56 @@ EAST_ASIAN = ("cjk", "hangul")
 # written in more than one script (Serbian in Latin letters, Punjabi in Shahmukhi): only Chinese, Japanese and Korean
 # letters are stray there
 MULTI_SCRIPT = {"sr", "pa"}
+# CLDR cardinal plural rules: the first whole numbers each category is used for (up to five; none where only fractions
+# use it). A form for a category that covers several numbers has to show the number: Russian "one" is 1, 21, 31...,
+# French "one" is 0 and 1, so "One day left" cannot be translated as "one day" there.
+PLURAL_NUMBERS = {
+    "ar": {"zero": (0,), "one": (1,), "two": (2,), "few": (3, 4, 5, 6, 7), "many": (11, 12, 13, 14, 15),
+           "other": (100, 101, 102, 200, 201)},
+    "am": {"one": (0, 1), "other": (2, 3, 4, 5, 6)},
+    "bg": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "cs": {"one": (1,), "few": (2, 3, 4), "many": (), "other": (0, 5, 6, 7, 8)},
+    "de": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "el": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "en": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "es": {"one": (1,), "many": (1000000, 2000000, 10000000), "other": (0, 2, 3, 4, 5)},
+    "fa": {"one": (0, 1), "other": (2, 3, 4, 5, 6)},
+    "fi": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "fil": {"one": (0, 1, 2, 3, 5), "other": (4, 6, 9, 14, 16)},
+    "fr": {"one": (0, 1), "many": (1000000, 2000000, 10000000), "other": (2, 3, 4, 5, 6)},
+    "gd": {"one": (1, 11), "two": (2, 12), "few": (3, 4, 5, 6, 7), "other": (0, 20, 21, 22, 23)},
+    "he": {"one": (1,), "two": (2,), "other": (0, 3, 4, 5, 6)},
+    "ht": {"other": (0, 1, 2, 3, 4)},
+    "hu": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "hy": {"one": (0, 1), "other": (2, 3, 4, 5, 6)},
+    "id": {"other": (0, 1, 2, 3, 4)},
+    "it": {"one": (1,), "many": (1000000, 2000000, 10000000), "other": (0, 2, 3, 4, 5)},
+    "ja": {"other": (0, 1, 2, 3, 4)},
+    "km": {"other": (0, 1, 2, 3, 4)},
+    "kn": {"one": (0, 1), "other": (2, 3, 4, 5, 6)},
+    "ko": {"other": (0, 1, 2, 3, 4)},
+    "mk": {"one": (1, 21, 31, 41, 51), "other": (0, 2, 3, 4, 5)},
+    "ms": {"other": (0, 1, 2, 3, 4)},
+    "nl": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "no": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "om": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "pa": {"one": (0, 1), "other": (2, 3, 4, 5, 6)},
+    "pl": {"one": (1,), "few": (2, 3, 4, 22, 23), "many": (0, 5, 6, 7, 8), "other": ()},
+    "pt": {"one": (0, 1), "many": (1000000, 2000000, 10000000), "other": (2, 3, 4, 5, 6)},
+    "ro": {"one": (1,), "few": (0, 2, 3, 4, 5), "other": (20, 21, 22, 23, 24)},
+    "ru": {"one": (1, 21, 31, 41, 51), "few": (2, 3, 4, 22, 23), "many": (0, 5, 6, 7, 8), "other": ()},
+    "sk": {"one": (1,), "few": (2, 3, 4), "many": (), "other": (0, 5, 6, 7, 8)},
+    "sl": {"one": (1, 101, 201, 301, 401), "two": (2, 102, 202, 302, 402), "few": (3, 4, 103, 104, 203),
+           "other": (0, 5, 6, 7, 8)},
+    "sr": {"one": (1, 21, 31, 41, 51), "few": (2, 3, 4, 22, 23), "other": (0, 5, 6, 7, 8)},
+    "sv": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "th": {"other": (0, 1, 2, 3, 4)},
+    "tr": {"one": (1,), "other": (0, 2, 3, 4, 5)},
+    "uk": {"one": (1, 21, 31, 41, 51), "few": (2, 3, 4, 22, 23), "many": (0, 5, 6, 7, 8), "other": ()},
+    "vi": {"other": (0, 1, 2, 3, 4)},
+    "zh-cn": {"other": (0, 1, 2, 3, 4)},
+    "zh-tw": {"other": (0, 1, 2, 3, 4)},
+}
 
 
 def name(code):
@@ -131,6 +183,24 @@ def name(code):
 
 def plural_categories(code):
     return LANGS[code][2]
+
+
+def plural_numbers(code, category, explicit=()):
+    """The whole numbers a plural category is used for (the first five), without those an ICU message gives an =N
+    branch of their own."""
+    return [n for n in PLURAL_NUMBERS.get(code, {}).get(category, ()) if n not in explicit]
+
+
+def _numbers_text(nums):
+    return ", ".join(map(str, nums[:4])) + ("..." if len(nums) > 4 else "")
+
+
+def several_numbers_problem(category, nums, mark):
+    """Worded so that a model acts on it: told only to "put # in it", ours wrote Persian "one" as "one habit" three
+    times out of three; told not to say "one" and to write the form like the "other" one, it did it right."""
+    word = category if category in ("zero", "one", "two") else "the number in words"
+    return (f"the {category} form is used for {_numbers_text(nums)}, so it must not say {word}: write it like the "
+            f"other form, with {mark} where the number goes")
 
 
 def parse(spec):
@@ -171,6 +241,7 @@ PLACEHOLDER = re.compile(
     r"|\|")                                                # table cells (Markdown)
 ICU_HEAD = re.compile(r"\{\s*(\w+)\s*,\s*(plural|select|selectordinal)\s*,")
 ICU_KEY = re.compile(r"(=\d+|zero|one|two|few|many|other|\w+)\s*\{")
+ICU_BRANCH = re.compile(r"\s*(=\d+|[A-Za-z_]\w*)\s*\{")
 
 
 def mask_icu(s):
@@ -194,6 +265,31 @@ def mask_icu(s):
             chars[open_at] = chars[j] = " "
             i = j + 1
     return "".join(chars)
+
+
+def icu_branches(s):
+    """{variable: [(selector, text), ...]} for every plural argument of an ICU message (select and selectordinal are
+    left out: their branches are not the cardinal categories)."""
+    out = {}
+    for head in ICU_HEAD.finditer(s):
+        if head.group(2) != "plural":
+            continue
+        i, items = head.end(), out.setdefault(head.group(1), [])
+        while i < len(s):
+            m = ICU_BRANCH.match(s, i)
+            if not m:
+                break
+            depth, j = 0, m.end() - 1
+            while j < len(s):
+                depth += {"{": 1, "}": -1}.get(s[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            if j >= len(s):
+                break
+            items.append((m.group(1), s[m.end():j]))
+            i = j + 1
+    return out
 
 
 def placeholders(s, icu=False):
@@ -409,6 +505,16 @@ def check(source, target, lang, keep=(), icu=False, numbers=True):
         ht = sorted(ICU_HEAD.findall(target))
         if hs != ht:
             problems.append("ICU variables changed")
+        # a branch for a category that covers several numbers must show the number, as the English "other" does
+        src_branches = icu_branches(source)
+        for var, branches in icu_branches(target).items():
+            other = dict(src_branches.get(var, [])).get("other", "")
+            marks = [t for t in ("#", "{%s}" % var) if t in other]
+            explicit = {int(sel[1:]) for sel, _ in branches if sel.startswith("=")}
+            for sel, text in branches:
+                nums = plural_numbers(lang, sel, explicit)
+                if marks and not sel.startswith("=") and len(nums) >= 2 and not any(t in text for t in marks):
+                    problems.append(several_numbers_problem(sel, nums, marks[0]))
     lost_terms = _lost_terms(source, target, keep)
     if lost_terms:
         problems.append("changed " + ", ".join(lost_terms) + " (to be kept as written)")

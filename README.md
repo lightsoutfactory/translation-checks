@@ -22,6 +22,10 @@ check("Planted values show up.", "Apar valori植入.", "ro")
   inline code and Markdown link targets. Nothing lost, nothing invented.
 - **ICU messages** (`{count, plural, one{...} other{...}}`) keep their variables. The number of branches may differ,
   since Russian needs one, few, many and other, and Arabic six forms.
+- **Plural forms that cover several numbers show the number.** Russian "one" is also 21 and 31, French "one" is also
+  0 (CLDR). So `one{One day left}` must become `one{Остался # день}`, not "один день", which a user with 21 days left
+  would see; German "one" is only 1 and may say "ein Tag". Checked when the English "other" branch shows the number,
+  with `=N` branches taken into account.
 - **Numbers come back:** every number written in digits, in any digits (`٣` and `３` are 3) and with the target's
   separators (1,000 = 1.000 = 1 000). What the source says in words may come back in digits: "ten rounds" as 10,
   "July 2026" as 2026年7月, "3 million" as 300万 or 300만, "3 pm" as 15:00, "half the time" as 50%. A lone 1 may
@@ -44,7 +48,8 @@ check("Planted values show up.", "Apar valori植入.", "ro")
 
 On the sites we run, every translation goes through checks like these before it is published. Against that record:
 
-- **False alarms:** 0 among the 568,574 page translations those checks accepted, in 42 languages.
+- **False alarms:** 0 among the 568,574 page translations those checks accepted, in 42 languages, and 0 among the
+  897 ICU plural translations in Android's own framework strings (android-36, 39 of these languages).
 - **Letters of another script:** caught in all 1,652 translations our checks refused for them.
 - **Numbers:** caught in 66,768 of the 73,404 translations refused over numbers. Of the rest, 6,503 were refusals our
   own checks have since stopped making (Japanese 300万 for "3 million", 0時 for "midnight"), and 133 are ones this
