@@ -15,6 +15,15 @@ check("Planted values show up.", "Apar valori植入.", "ro")
 # ['letters of another script than Romanian: 入植']
 ```
 
+## Install
+
+```sh
+pip install git+https://github.com/lightsoutfactory/translation-checks
+translation-checks locales/en.json locales/de.json --lang de
+```
+
+Or copy `translation_checks.py` into your project: it is one file with no dependencies.
+
 ## What it checks, per string
 
 - **Placeholders come back exactly:** printf (`%s`, `%1$s`, `%.2f`, `%(name)s`), braces (`{name}`, `{0}`,

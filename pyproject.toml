@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "translation-checks"
+dynamic = ["version"]
+description = "Catch translations that would break your app: placeholders, numbers, plural forms, kept names and scripts in 43 languages."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "LightsOut Factory", email = "support@lightsoutfactory.ai" }]
+keywords = ["ci", "i18n", "icu", "internationalization", "l10n", "linter", "llm", "localization", "machine-translation", "python", "qa", "quality-assurance", "translation"]
+classifiers = ["Programming Language :: Python :: 3", "Operating System :: OS Independent"]
+
+[project.urls]
+Homepage = "https://lightsoutfactory.ai/open-source/"
+Source = "https://github.com/lightsoutfactory/translation-checks"
+
+[project.scripts]
+translation-checks = "translation_checks:main"
+
+[tool.setuptools]
+py-modules = ["translation_checks"]
+
+[tool.setuptools.dynamic]
+version = { attr = "translation_checks.__version__" }
