@@ -51,7 +51,7 @@ import re
 import sys
 import unicodedata
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 
 # code: (English name, script, plural categories)
@@ -529,9 +529,19 @@ def _scaled(source, target):
 def number_changes(source, target, num=NUM):
     """(lost, added): Counters of the numbers of the source the translation lacks and of those it adds, after the
     renderings a good translation may use. Both empty when the numbers match."""
-    if TIME_12.search(_plain(source)):  # "6 p.m." may be 18:00 or 18.00, "6 a.m." 06:00: hours, then minutes
-        target = re.sub(r"(?<![\d.,:])(\d{1,2})[:.]([0-5]\d)(?![\d.,:])",
-                        lambda m: m[1] if m[2] == "00" else f"{m[1]} {m[2]}", target)
+    times = list(TIME_12.finditer(_plain(source)))
+    if times:   # "6 p.m." may be 18:00, 18.00 or 06.00: an hour and its minutes, ":00" dropped. With a dot only for an
+        # hour the source names, so "$4.50" stays a price
+        hours = {str(int(m[1]) % 12 + (12 if m[2].lower() == "p" else 0)) for m in times} | {str(int(m[1])) for m in times}
+
+        def hm(m):
+            if m[2] == ":" or str(int(m[1])) in hours:
+                return m[1] if m[3] == "00" else f"{m[1]} {m[3]}"
+            return m[0]
+        clock = re.compile(r"(?<!\d)(?<!\d[.,:])(\d{1,2})([:.])([0-5]\d)(?!\d)(?![.,:]\d)")
+        source = clock.sub(lambda m: hm(m) if m[2] == ":" and not re.match(r"\s*[ap]\.?m\b", m.string[m.end():], re.I)
+                           else m[0], source)        # "3:30 pm" stays whole for the 12-hour reading below
+        target = clock.sub(hm, target)
     sn, on = _numbers(source.replace("24/7", " ")), _numbers(_day_month(source, target), num)
     if "24/7" in source:            # "around the clock" is a fine translation of 24/7, so is "24 hours, 365 days"
         on -= collections.Counter(("24", "7", "365"))
@@ -795,7 +805,7 @@ def main(argv=None):
         for where, ps in problems:
             print(f"  {where}: {'; '.join(ps)}")
         bad = sum(1 for where, _ in problems if where != "Plural-Forms")
-        print(f"{done} translated entries ({name(lang)}): {done - bad} fine, {bad} with problems, {missing} not "
+        print(f"{done} translated {'entry' if done == 1 else 'entries'} ({name(lang)}): {done - bad} fine, {bad} with problems, {missing} not "
               f"translated" + ("; the Plural-Forms header is wrong" if any(w == "Plural-Forms" for w, _ in problems) else ""))
         return 1 if problems else 0
     if a.translated is None or not a.lang:

@@ -80,7 +80,7 @@ translation-checks locale/ru/LC_MESSAGES/app.po      # the language comes from i
 
 On the sites we run, every translation goes through checks like these before it is published. Against that record:
 
-- **False alarms:** 0 among the 576,162 page translations those checks accepted, in 42 languages, and 0 among the
+- **False alarms:** 0 among the 576,120 page translations those checks accepted, in 42 languages, and 0 among the
   897 ICU plural translations in Android's own framework strings (android-36, 39 of these languages).
 - **On someone else's files:** Django 5.2's own `.po` files in 39 of these languages, translated by people: 31,879
   translated entries, 475 flagged (1.5%). By kind: 234 plural entries whose number of forms does not match their
@@ -94,7 +94,7 @@ On the sites we run, every translation goes through checks like these before it 
   they are (URL, IPv4, `%s KB`), whole hours as 18:00, calendar abbreviations as numbers (Feb. as 2月) and ordinals as
   digits (the twelfth month as 12ヶ月目).
 - **Letters of another script:** caught in all 5,121 translations our checks refused for them.
-- **Numbers:** caught in 69,924 of the 83,350 translations our checks refused over numbers. Version 1.3.0 lets 6,782
+- **Numbers:** caught in 69,957 of the 83,388 translations our checks refused over numbers. Version 1.3.0 lets 6,782
   of them through that 1.2.0 caught; we read them by kind, and they are the same numbers written in a way our sites'
   own checks do not know: ordinals and fractions in digits ("the twelfth month" as 12ヶ月目, "one-fifth" as 1/5 or 20%),
   a decade as 10, a time as 17:00, a date with its leading zero.

@@ -165,6 +165,10 @@ class TestRealFiles(unittest.TestCase):
                                ("See https://example.com/path for more", "Siehe „https://example.com/path“ für mehr", "de")):
             self.assertEqual(t.check(src, out, lang), [], (src, lang))
         self.assertTrue(t.check("Scratches mar the finish", "Кратки драскотини 3", "bg"), "mar is a month only on its own")
+        self.assertEqual(t.check("Opens at 3 pm, tickets cost $4.50", "Öffnet um 15:00, Tickets kosten $4.50", "de"), [],
+                         "a price next to a time is still a price")
+        self.assertEqual(t.check("From 10:00 to 3 pm", "Von 10:00 bis 15:00", "de"), [])
+        self.assertTrue(t.check("Opens at 3 pm", "Öffnet um 16:00", "de"), "a wrong hour is still wrong")
         self.assertTrue(t.check("Price 0.5", "Цена 5", "ru"))
 
 RU_PO = """msgid ""
