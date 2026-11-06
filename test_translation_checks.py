@@ -168,6 +168,9 @@ class TestRealFiles(unittest.TestCase):
         self.assertEqual(t.check("Opens at 3 pm, tickets cost $4.50", "Öffnet um 15:00, Tickets kosten $4.50", "de"), [],
                          "a price next to a time is still a price")
         self.assertEqual(t.check("From 10:00 to 3 pm", "Von 10:00 bis 15:00", "de"), [])
+        s = "They write 6 p.m. as 18.00, 6 a.m. as 06.00 and Feb. as 2月."
+        self.assertEqual(t.check(s, "Sie schreiben 6 p.m. als 18.00, 6 a.m. als 06.00 und Feb. als 2月.", "de"), [],
+                         "a source that writes a time itself is read like the translation")
         self.assertTrue(t.check("Opens at 3 pm", "Öffnet um 16:00", "de"), "a wrong hour is still wrong")
         # a weekday becomes a number only as a calendar label: in a sentence, an added digit is a different date
         self.assertTrue(t.check("Bundesliga Predictions Today: Saturday Matchday Analysis",

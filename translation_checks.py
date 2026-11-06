@@ -51,7 +51,7 @@ import re
 import sys
 import unicodedata
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 
 
 # code: (English name, script, plural categories)
@@ -539,8 +539,9 @@ def number_changes(source, target, num=NUM):
                 return m[1] if m[3] == "00" else f"{m[1]} {m[3]}"
             return m[0]
         clock = re.compile(r"(?<!\d)(?<!\d[.,:])(\d{1,2})([:.])([0-5]\d)(?!\d)(?![.,:]\d)")
-        source = clock.sub(lambda m: hm(m) if m[2] == ":" and not re.match(r"\s*[ap]\.?m\b", m.string[m.end():], re.I)
-                           else m[0], source)        # "3:30 pm" stays whole for the 12-hour reading below
+        # the same on both sides, so a source that writes 18.00 itself is not read as 1800; only "3:30 pm" stays whole
+        # for the 12-hour reading below
+        source = clock.sub(lambda m: m[0] if re.match(r"\s*[ap]\.?m\b", m.string[m.end():], re.I) else hm(m), source)
         target = clock.sub(hm, target)
     sn, on = _numbers(source.replace("24/7", " ")), _numbers(_day_month(source, target), num)
     if "24/7" in source:            # "around the clock" is a fine translation of 24/7, so is "24 hours, 365 days"
