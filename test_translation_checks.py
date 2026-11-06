@@ -169,6 +169,9 @@ class TestRealFiles(unittest.TestCase):
                          "a price next to a time is still a price")
         self.assertEqual(t.check("From 10:00 to 3 pm", "Von 10:00 bis 15:00", "de"), [])
         self.assertTrue(t.check("Opens at 3 pm", "Öffnet um 16:00", "de"), "a wrong hour is still wrong")
+        # a weekday becomes a number only as a calendar label: in a sentence, an added digit is a different date
+        self.assertTrue(t.check("Bundesliga Predictions Today: Saturday Matchday Analysis",
+                                "Baayii Bundesliga Har'a: Xiinxala Guyyaa Sadaasa 4", "om"))
         self.assertTrue(t.check("Price 0.5", "Цена 5", "ru"))
 
 RU_PO = """msgid ""

@@ -51,7 +51,7 @@ import re
 import sys
 import unicodedata
 
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 
 
 # code: (English name, script, plural categories)
@@ -490,7 +490,7 @@ def _spelled(source):
                 out.append(str(MONTHS[part]))
             elif short and part in MONTH_ABBR:
                 out.append(str(MONTH_ABBR[part]))
-            if part in WEEKDAYS or (short and part in WEEKDAY_ABBR):
+            if short and (part in WEEKDAYS or part in WEEKDAY_ABBR):   # a calendar label, not a weekday in a sentence
                 out += [str(i) for i in range(1, 8)]        # the day's number, counted from Sunday or Monday
         if all(x in WORDNUM for x in parts):
             out.append(str(sum(WORDNUM[x] for x in parts)))
