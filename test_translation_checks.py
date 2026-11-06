@@ -1,7 +1,9 @@
 """translation-checks tests.  python3 -m unittest test_translation_checks"""
+import gettext
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -135,6 +137,109 @@ class TestChecks(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(t.main([src, dst, "--lang", "de"] + flags), code, flags)
 
+
+
+class TestRealFiles(unittest.TestCase):
+    """What Django's own .po files (human translations, 39 of these languages) showed us to accept"""
+    def test_names_units_and_code_copied_from_the_source(self):
+        for src, out, lang in (("URL", "URL", "ja"), ("%s KB", "%s KB", "th"), ("IPv4", "IPv4", "ko"), ("salt", "salt", "ar"),
+                               ("Boolean (Either True or False)", "ブール値 (True または False)", "ja"),
+                               ("PostgreSQL extensions", "PostgreSQL разширения", "bg"), ("A JSON object", "JSON对象", "zh-cn"),
+                               ("IPv4 or IPv6", "IPv4またはIPv6", "ja"), ("email address", "Email адреса", "mk"),
+                               ("Example: “/about/contact/”. Make sure to have leading and trailing slashes.",
+                                "例如：“/about/contact/”。确保有开头和结尾的斜杠。", "zh-cn"),
+                               ("%(value).1f million", "%(value).1f милион", "mk")):
+            self.assertEqual(t.check(src, out, lang), [], (src, lang))
+        # still caught: English left in place, around a few translated words or all of it
+        self.assertIn("only 59% of the letters are in cyrillic script",
+                      t.check("Your changes are saved and will sync later", "Your changes are saved и будут синхронизированы", "ru"))
+        self.assertIn("not translated", t.check("Save changes", "Save changes", "ru"))
+        self.assertEqual(t.check("%(value).1f million", "%(value)s милион", "mk"), ["lost %(value).1f", "added %(value)s"])
+
+    def test_times_dates_and_words_for_numbers(self):
+        for src, out, lang in (("6 a.m.", "06.00", "fi"), ("6 p.m.", "18.00", "fi"), ("Opens at 3 pm", "Öffnet um 15:00", "de"),
+                               ("Opens at 3:30 pm", "Öffnet um 15:30", "de"), ("Feb.", "2月", "ja"), ("dec", "12월", "ko"),
+                               ("Thursday", "Thứ 5", "vi"), ("The table shows the twelfth month.", "表は12ヶ月目を示します。", "ja"),
+                               ("It wins in about one-fifth of cases.", "약 20%의 경우에서 승리합니다.", "ko"),
+                               ("spouses more than a decade younger", "10歳以上年下の配偶者", "ja"),
+                               ("See https://example.com/path for more", "Siehe „https://example.com/path“ für mehr", "de")):
+            self.assertEqual(t.check(src, out, lang), [], (src, lang))
+        self.assertTrue(t.check("Scratches mar the finish", "Кратки драскотини 3", "bg"), "mar is a month only on its own")
+        self.assertTrue(t.check("Price 0.5", "Цена 5", "ru"))
+
+RU_PO = """msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\\n"
+"Language: ru\\n"
+"Plural-Forms: {rule}\\n"
+
+msgid "Save changes"
+msgstr "Сохранить изменения"
+
+msgid "One habit missed"
+msgid_plural "%(n)s habits missed"
+{forms}
+"""
+RU_RULE = t.gettext_plural("ru")[0]
+RU_FORMS = 'msgstr[0] "Пропущена %(n)s привычка"\nmsgstr[1] "Пропущено %(n)s привычки"\nmsgstr[2] "Пропущено %(n)s привычек"'
+
+
+class TestGettext(unittest.TestCase):
+    def test_every_rule_matches_cldr(self):
+        for code in t.ALL:
+            rule, cats = t.gettext_plural(code)
+            m = re.fullmatch(r"nplurals=(\d+); plural=(.+);", rule)
+            self.assertEqual(int(m.group(1)), len(cats), code)
+            pick = gettext.c2py(m.group(2))
+            for cat in t.plural_categories(code):
+                for n in t.plural_numbers(code, cat):
+                    want = "other" if cat == "many" and code in ("es", "fr", "it", "pt") else cat
+                    self.assertEqual(cats[pick(n)], want, (code, n))
+
+    def test_a_good_file(self):
+        problems, counts = t.check_po(RU_PO.format(rule=RU_RULE, forms=RU_FORMS), "ru")
+        self.assertEqual((problems, counts), ([], (2, 0)))
+
+    def test_a_rule_that_mixes_forms(self):
+        problems, _ = t.check_po(RU_PO.format(rule="nplurals=2; plural=(n != 1);",
+                                              forms='msgstr[0] "%(n)s привычка"\nmsgstr[1] "%(n)s привычек"'), "ru")
+        header = dict(problems)["Plural-Forms"][0]
+        self.assertIn("msgstr[1] serves numbers that Russian gives different forms (many: 0, 5, 6, 7...; few: 2, 3, "
+                      "4, 22...; one: 21, 31, 41, 51...)", header)
+        problems, _ = t.check_po(RU_PO.format(rule="nplurals=3; plural=(n != 1);", forms=RU_FORMS), "ru")
+        self.assertIn("msgstr[1] serves", dict(problems)["Plural-Forms"][0])
+        # an older Romanian rule: 101 goes with 20 ("de"), where current CLDR puts it with 2-19
+        ro = RU_PO.replace("Language: ru", "Language: ro").format(
+            rule="nplurals=3; plural=(n == 1) ? 0 : ((n == 0 || n % 100 >= 2 && n % 100 <= 19) ? 1 : 2);",
+            forms='msgstr[0] "Un obicei ratat"\nmsgstr[1] "%(n)s obiceiuri ratate"\nmsgstr[2] "%(n)s de obiceiuri ratate"')
+        self.assertIn("few: 101", dict(t.check_po(ro, "ro")[0])["Plural-Forms"][0])
+
+    def test_plural_entries(self):
+        po = RU_PO.format(rule=RU_RULE, forms='msgstr[0] "Пропущена одна привычка"\nmsgstr[1] "Пропущено %(n)s привычки"')
+        problems = dict(t.check_po(po, "ru")[0])["One habit missed"]
+        self.assertIn("2 msgstr forms, but Plural-Forms has 3", problems)
+        self.assertIn("msgstr[2] is empty", problems)
+        self.assertTrue(any("the one form is used for 1, 21, 31, 41..." in x for x in problems), problems)
+        ar = RU_PO.replace("Language: ru", "Language: ar").format(rule=t.gettext_plural("ar")[0], forms="\n".join(
+            f'msgstr[{i}] "{x}"' for i, x in enumerate(["لا عادات مفوّتة", "عادة واحدة مفوّتة", "عادتان مفوّتتان",
+                                                         "%(n)s عادات مفوّتة", "%(n)s عادةً مفوّتة", "%(n)s عادة مفوّتة"])))
+        self.assertEqual(dict(t.check_po(ar.replace('msgstr "Сохранить изменения"', 'msgstr "حفظ التغييرات"'), "ar")[0]),
+                         {}, "zero and two are one number each and may leave it out")
+
+    def test_cli_on_a_po_file(self):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "ru.po")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(RU_PO.format(rule="nplurals=2; plural=(n != 1);",
+                                  forms='msgstr[0] "%(n)s привычка"\nmsgstr[1] "%(n)s привычек"'))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(t.main([path]), 1, "the language comes from the header")
+        self.assertIn("2 translated entries (Russian): 2 fine, 0 with problems, 0 not translated; the Plural-Forms "
+                      "header is wrong", out.getvalue())
+        self.assertEqual(t.po_language('msgid ""\nmsgstr "Language: pt_BR\\n"\n'), "pt")
+        self.assertEqual(t.po_language('msgid ""\nmsgstr "Language: nb\\n"\n'), "no")
+        self.assertEqual(t.po_language('msgid ""\nmsgstr "Language: de_DE\\n"\n'), "de")
 
 if __name__ == "__main__":
     unittest.main()

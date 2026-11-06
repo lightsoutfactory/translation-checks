@@ -5,6 +5,7 @@ machine translations, on what a translation service sent back, or in CI.
 
 ```sh
 python3 translation_checks.py locales/en.json locales/de.json --lang de --keep "Habit Garden,Pro"
+python3 translation_checks.py locale/ru/LC_MESSAGES/app.po          # a gettext file, with its plural rule
 ```
 
 ```python
@@ -36,9 +37,10 @@ Or copy `translation_checks.py` into your project: it is one file with no depend
   would see; German "one" is only 1 and may say "ein Tag". Checked when the English "other" branch shows the number,
   with `=N` branches taken into account.
 - **Numbers come back:** every number written in digits, in any digits (`٣` and `３` are 3) and with the target's
-  separators (1,000 = 1.000 = 1 000). What the source says in words may come back in digits: "ten rounds" as 10,
-  "July 2026" as 2026年7月, "3 million" as 300万 or 300만, "3 pm" as 15:00, "half the time" as 50%. A lone 1 may
-  become a word. `--no-numbers` (or `numbers=False`) turns this off; ICU messages skip it.
+  separators (1,000 = 1.000 = 1 000; 06 is 6). What the source says in words may come back in digits: "ten rounds" as
+  10, "July 2026" as 2026年7月, "3 million" as 300万 or 300만, "3 pm" as 15:00, "half the time" as 50%, "the twelfth
+  month" as 12ヶ月目, "a decade" as 10, "Feb." as 2月. A lone 1 may become a word. `--no-numbers` (or
+  `numbers=False`) turns this off; ICU messages skip it.
 - **No letters of another script:** a model that slips into Chinese for one word ("valori植入" in Romanian), writes
   Thai on a Khmer page, or types a Cyrillic "о" inside a Finnish word. Letters the source has, and Latin letters, are
   always allowed. Chinese, Japanese and Korean are not checked; Serbian and Punjabi only for Chinese, Japanese and
@@ -47,22 +49,55 @@ Or copy `translation_checks.py` into your project: it is one file with no depend
   ("Pressing" does not contain the name "Press"). A translation may join a name into a compound: "Store-Dock-Kits".
 - **The right script:** at least 60% of the letters in Cyrillic, Arabic, Hebrew, Greek, Armenian, Ethiopic, CJK,
   Hangul, Thai, Khmer, Kannada or Gurmukhi for the languages written in them. That catches English left in place.
+  Names, code and paths copied from the source (PostgreSQL, True, `flatpages/default.html`) do not count, and a
+  single word or unit kept as it is (URL, IPv4, `%s KB`) passes.
 - **Not left in English:** two or more words identical to the source fail. A single identical word is allowed, since
   loanwords are often right ("Backups" in German).
 - **Not empty and not runaway:** at most 4 times the source's length plus 20 characters.
 
 43 languages, with their scripts and CLDR plural categories, are in `LANGS`.
 
+## gettext files
+
+A translated `.po` file is checked on its own, its msgids being the source:
+
+```sh
+translation-checks locale/ru/LC_MESSAGES/app.po      # the language comes from its Language: header, or give --lang
+```
+
+- **The Plural-Forms rule.** The header's formula picks the msgstr slot for a number, and every number from 0 to 1000
+  must land in a slot that CLDR gives a single form. A Russian file with `nplurals=2; plural=(n != 1);` puts 2, 5 and
+  21 in one slot, where Russian says "2 привычки", "5 привычек" and "21 привычка"; the check names the numbers that
+  clash and the rule to use. The rules for all 42 languages, checked against CLDR for every number from 0 to 10,000,
+  are in `GETTEXT_PLURALS`, and a [field note](https://lightsoutfactory.ai/field-notes/gettext-plural-forms/) shows
+  them in a table.
+- **Every plural entry** has a msgstr for each slot, none of them empty. Each form passes the checks above against
+  msgid or msgid_plural; a slot used for several numbers shows the number (`%d`, `%(n)s`, `{count}`), and a slot for a
+  single number may leave it out (Arabic says "two" with the dual).
+- Every other translated entry is checked like a JSON string. Untranslated entries are counted, not flagged.
+
 ## Measured
 
 On the sites we run, every translation goes through checks like these before it is published. Against that record:
 
-- **False alarms:** 0 among the 568,574 page translations those checks accepted, in 42 languages, and 0 among the
+- **False alarms:** 0 among the 576,162 page translations those checks accepted, in 42 languages, and 0 among the
   897 ICU plural translations in Android's own framework strings (android-36, 39 of these languages).
-- **Letters of another script:** caught in all 1,652 translations our checks refused for them.
-- **Numbers:** caught in 66,768 of the 73,404 translations refused over numbers. Of the rest, 6,503 were refusals our
-  own checks have since stopped making (Japanese 300万 for "3 million", 0時 for "midnight"), and 133 are ones this
-  tool reads as the same number, such as "4pm" as 16h and Persian thousands separators.
+- **On someone else's files:** Django 5.2's own `.po` files in 39 of these languages, translated by people: 31,879
+  translated entries, 475 flagged (1.5%). By kind: 234 plural entries whose number of forms does not match their
+  file's Plural-Forms (the Spanish, French, Italian and Portuguese headers say two forms where the entries carry
+  three, the Hebrew header four where they carry three); 125 with English left in place (Thai "log entry", Greek "work
+  factor"); 78 with a placeholder, tag or line break changed; 28 with numbers that differ, among them numbers the
+  translator wrote in words (Arabic "the past seven days"), which this check does not accept; 6 forms for several
+  numbers without the number; 4 with letters of another script (a Thai letter in the Khmer word for "Russian"). The
+  Armenian, Punjabi and Turkish files' Plural-Forms give 0 a different form than CLDR does. Those files also taught it
+  what to accept: names and code copied into a translation (PostgreSQL, True, JSON), units and abbreviations left as
+  they are (URL, IPv4, `%s KB`), whole hours as 18:00, calendar abbreviations as numbers (Feb. as 2月) and ordinals as
+  digits (the twelfth month as 12ヶ月目).
+- **Letters of another script:** caught in all 5,121 translations our checks refused for them.
+- **Numbers:** caught in 69,924 of the 83,350 translations our checks refused over numbers. Version 1.3.0 lets 6,782
+  of them through that 1.2.0 caught; we read them by kind, and they are the same numbers written in a way our sites'
+  own checks do not know: ordinals and fractions in digits ("the twelfth month" as 12ヶ月目, "one-fifth" as 1/5 or 20%),
+  a decade as 10, a time as 17:00, a date with its leading zero.
 
 ## What it cannot check
 

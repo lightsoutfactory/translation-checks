@@ -1,6 +1,8 @@
 """translation-checks: catch machine (or human) translations that would break your app.
 
     python3 translation_checks.py locales/en.json locales/de.json --lang de [--keep "Habit Garden,Pro"]
+    python3 translation_checks.py locale/ru/LC_MESSAGES/app.po [--lang ru]      a gettext file: its own msgids are the
+                                                                               source, and its plural rule is checked
 
 or, in your own pipeline:
 
@@ -19,14 +21,20 @@ The checks, per string:
   own case ("Pressing" does not contain the name "Press"); a translation may join it into a compound
   ("Store-Dock-Kits");
 - numbers: every number written in digits comes back, in any digits (٣, ３) and with any separators (1,000 = 1.000 =
-  1 000); what the source spells out may come back in digits ("ten" -> 10, "July 2026" -> 2026年7月,
-  "3 million" -> 300万, "3 pm" -> 15:00), and a lone 1 may become a word. ICU messages skip this check;
+  1 000; 06 = 6); what the source spells out may come back in digits ("ten" -> 10, "July 2026" -> 2026年7月,
+  "3 million" -> 300万, "3 pm" -> 15:00, "the twelfth month" -> 12ヶ月目, "Feb." -> 2月), and a lone 1 may become a
+  word. ICU messages skip this check;
 - no stray letters: letters of another script that the source does not have, such as a word slipping into Chinese
   in a Romanian sentence ("valori植入"), Thai inside Khmer or a Cyrillic "о" inside a Finnish word. Latin letters are
   always allowed; Chinese, Japanese and Korean are not checked, Serbian and Punjabi only for Chinese, Japanese and
   Korean letters;
 - not empty, and not longer than 4 times the source (plus 20 characters);
-- written in the target language's script: at least 60% of the letters, for languages that do not use Latin letters;
+- written in the target language's script: at least 60% of the letters, for languages that do not use Latin letters
+  (names, code and paths copied from the source do not count; a single word or unit kept as it is passes);
+- gettext files: the header's Plural-Forms sends every number from 0 to 1000 to a slot that holds one CLDR form only
+  (a Russian file with "nplurals=2; plural=(n != 1)" puts 2 and 5 in one slot, where Russian needs "привычки" and
+  "привычек"); every plural entry has a msgstr for each slot, each form keeps the placeholders, and a slot used for
+  several numbers shows the number (Russian msgstr[0] is also 21 and 31);
 - not identical to the source, unless the source is a single word (a loanword is often right), a term you keep,
   or has no letters to translate.
 
@@ -37,12 +45,13 @@ translation memory.
 """
 import argparse
 import collections
+import gettext
 import json
 import re
 import sys
 import unicodedata
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 
 # code: (English name, script, plural categories)
@@ -176,6 +185,38 @@ PLURAL_NUMBERS = {
     "zh-tw": {"other": (0, 1, 2, 3, 4)},
 }
 
+# gettext Plural-Forms for each target, and the CLDR category msgstr[0], msgstr[1]... carry. Every whole number from 0
+# to 10000 lands on the form CLDR gives it (checked against Babel 2.18). Categories CLDR uses for fractions only
+# (Russian "other", Czech "many") get no index, and the "many" of exact millions in Spanish, French, Italian and
+# Portuguese shares "other". Haitian Creole nouns do not change for number: one form, as for its other formats.
+_ONE_OTHER = ("nplurals=2; plural=(n != 1);", ("one", "other"))
+_ZERO_ONE = ("nplurals=2; plural=(n > 1);", ("one", "other"))
+_SINGLE = ("nplurals=1; plural=0;", ("other",))
+_SLAVIC = "(n % 10 == 1 && n % 100 != 11) ? 0 : ((n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 1 : 2)"
+GETTEXT_PLURALS = {
+    **{c: _ONE_OTHER for c in ("bg", "de", "el", "es", "fi", "hu", "it", "nl", "no", "om", "sv", "tr")},
+    **{c: _ZERO_ONE for c in ("am", "fa", "fr", "hy", "kn", "pa", "pt")},
+    **{c: _SINGLE for c in ("ht", "id", "ja", "km", "ko", "ms", "th", "vi", "zh-cn", "zh-tw")},
+    "ar": ("nplurals=6; plural=(n == 0) ? 0 : ((n == 1) ? 1 : ((n == 2) ? 2 : ((n % 100 >= 3 && n % 100 <= 10) ? 3 : "
+           "((n % 100 >= 11) ? 4 : 5))));", ("zero", "one", "two", "few", "many", "other")),
+    "cs": ("nplurals=3; plural=(n == 1) ? 0 : ((n >= 2 && n <= 4) ? 1 : 2);", ("one", "few", "other")),
+    "sk": ("nplurals=3; plural=(n == 1) ? 0 : ((n >= 2 && n <= 4) ? 1 : 2);", ("one", "few", "other")),
+    "fil": ("nplurals=2; plural=(n != 1 && n != 2 && n != 3 && (n % 10 == 4 || n % 10 == 6 || n % 10 == 9));",
+            ("one", "other")),
+    "gd": ("nplurals=4; plural=(n == 1 || n == 11) ? 0 : ((n == 2 || n == 12) ? 1 : ((n > 2 && n < 20) ? 2 : 3));",
+           ("one", "two", "few", "other")),
+    "he": ("nplurals=3; plural=(n == 1) ? 0 : ((n == 2) ? 1 : 2);", ("one", "two", "other")),
+    "mk": ("nplurals=2; plural=(n % 10 == 1 && n % 100 != 11) ? 0 : 1;", ("one", "other")),
+    "pl": ("nplurals=3; plural=(n == 1) ? 0 : ((n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 1 : 2);",
+           ("one", "few", "many")),
+    "ro": ("nplurals=3; plural=(n == 1) ? 0 : ((n == 0 || n % 100 >= 1 && n % 100 <= 19) ? 1 : 2);",
+           ("one", "few", "other")),
+    "ru": ("nplurals=3; plural=" + _SLAVIC + ";", ("one", "few", "many")),
+    "uk": ("nplurals=3; plural=" + _SLAVIC + ";", ("one", "few", "many")),
+    "sr": ("nplurals=3; plural=" + _SLAVIC + ";", ("one", "few", "other")),
+    "sl": ("nplurals=4; plural=(n % 100 == 1) ? 0 : ((n % 100 == 2) ? 1 : ((n % 100 == 3 || n % 100 == 4) ? 2 : 3));",
+           ("one", "two", "few", "other")),
+}
 
 def name(code):
     return LANGS[code][0]
@@ -189,6 +230,11 @@ def plural_numbers(code, category, explicit=()):
     """The whole numbers a plural category is used for (the first five), without those an ICU message gives an =N
     branch of their own."""
     return [n for n in PLURAL_NUMBERS.get(code, {}).get(category, ()) if n not in explicit]
+
+
+def gettext_plural(code):
+    """(the Plural-Forms header value, the CLDR category of msgstr[0], msgstr[1], ...) for a target code"""
+    return GETTEXT_PLURALS[code]
 
 
 def _numbers_text(nums):
@@ -227,14 +273,16 @@ def script_share(text, code):
 
 PLACEHOLDER = re.compile(
     r"%(?:\d+\$)?[-+#0]*\d*(?:\.\d+)?[sdifuxXeEgGcpo@]"    # printf, %1$s, %.2f, %@ (no space flag: "100% sure")
-    r"|%\([A-Za-z_][\w]*\)[sdifr]"                          # %(name)s
+    r"|%\([A-Za-z_][\w]*\)[-+#0 ]*\d*(?:\.\d+)?[sdifrxXeEgGc]"  # %(name)s, %(value).1f
     r"|\{\{\s*[A-Za-z0-9_.\-]+\s*\}\}"                      # {{name}} (names are ASCII: {連続} is text)
     r"|\{[A-Za-z0-9_.\-]+\}"                                # {name} {0}
     r"|\$\{[A-Za-z0-9_.\-]+\}"                              # ${name}
     r"|(?<![\w:]):[a-z_][a-z0-9_]*(?![\w])"                 # :name (Laravel style)
     r"|</?[A-Za-z][\w:-]*(?:\s+[\w:-]+(?:=\"[^\"]*\"|='[^']*')?)*\s*/?>"  # tags with their attributes
     r"|\\n|\n"                                              # line breaks, escaped or real
-    r"|https?://[^\s\"'<>)]+"                              # URLs
+    r"|https?://[^\s\"'<>)\u201c\u201d\u201e\u00ab\u00bb\u2018\u2019\u200e\u200f\u202a-\u202e\u2066-\u2069]*"
+    r"[^\s\"'<>)\u201c\u201d\u201e\u00ab\u00bb\u2018\u2019\u200e\u200f\u202a-\u202e\u2066-\u2069.,;:!?]"  # URLs, without the quote,
+                                                            # bidi mark or full stop that follows them
     r"|[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)+"  # e-mail addresses
     r"|`[^`\n]+`"                                           # inline code (Markdown)
     r"|\]\([^)\s]+\)"                                      # a link target (Markdown)
@@ -340,6 +388,12 @@ NUM = re.compile(r"\d(?:[\d%s]|(?<=\d)[\s\uff0c](?=\d{3}(?!\d)))*\d|\d" % SEP)
 NUM_TIGHT = re.compile(r"\d(?:[\d%s])*\d|\d" % SEP)
 MONTHS = {m: i for i, m in enumerate("january february march april may june july august september october november "
                                        "december".split(), 1)}
+# a calendar label ("Feb.", "Thu") is a number in many languages: 2月, Tháng 2, 2월; Thứ 5 (Vietnamese Thursday).
+# Only for short sources, where "mar" or "sun" cannot be an ordinary word
+MONTH_ABBR = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10,
+              "nov": 11, "dec": 12}
+WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+WEEKDAY_ABBR = {"mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun"}
 WORDNUM = dict(zip("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
                    "sixteen seventeen eighteen nineteen twenty".split(), range(21)))
 WORDNUM.update(thirty=30, forty=40, fifty=50, sixty=60, seventy=70, eighty=80, ninety=90, hundred=100, thousand=1000,
@@ -351,7 +405,14 @@ WORDNUM.update(thirty=30, forty=40, fifty=50, sixty=60, seventy=70, eighty=80, n
 IMPLIED = {"half": ("2", "50", "05", "30"), "halves": ("2",), "quarter": ("4", "25"), "quarters": ("4", "75"),
            "thirds": ("3",), "midnight": ("0", "12", "24", "00"), "noon": ("12",), "dozen": ("12",),
            "dozens": ("12",), "clock": ("365",), "minor": ("18",), "minors": ("18",), "none": ("0",),
-           "bust": ("21",), "busts": ("21",), "busted": ("21",), "busting": ("21",)}
+           "bust": ("21",), "busts": ("21",), "busted": ("21",), "busting": ("21",),
+           "decade": ("10",), "decades": ("10",), "century": ("100",)}
+# ordinals come back as digits in many languages ("the twelfth month" is 12ヶ月目); a fifth is also 20%, a third 33%
+IMPLIED.update({w: (str(i),) for i, w in enumerate(
+    "first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth fourteenth "
+    "fifteenth sixteenth seventeenth eighteenth nineteenth twentieth".split(), 1)})
+IMPLIED.update(thirtieth=("30",), fortieth=("40",), fiftieth=("50",), hundredth=("100",), fifth=("5", "20"),
+               fifths=("5",), third=("3", "33"))
 PER_100 = re.compile(r"\b(?:of|in|out of) (?:every |each )?100\b", re.I)   # "97 of every 100" is rightly "97%"
 TIME_12 = re.compile(r"\b(\d{1,2})(?::\d\d)?\s*([ap])\.?m\b", re.I)          # "3 pm" may become 15:00
 DATE_DMY = re.compile(r"\b(\d{1,2})[./](\d{1,2})[./](\d{4})\b")             # dates are three numbers, not one
@@ -393,7 +454,10 @@ def _numbers(s, num=NUM):
     s = DATE_DMY.sub(lambda m: f"{int(m[1])} {int(m[2])} {m[3]}", s)      # 30.09.2026 = 2026年9月30日
     s = DATE_YMD.sub(lambda m: f"{m[1]} {int(m[2])} {int(m[3])}", s)
     s = MONTH_YEAR0.sub(r"\1 \2", s)
-    return collections.Counter(re.sub(r"[\s\uff0c%s]" % SEP, "", n) for n in num.findall(s))
+    def norm(n):                    # "06" is 6, but "0.5" keeps its zero (decimals lose only their separator)
+        bare = re.sub(r"[\s\uff0c%s]" % SEP, "", n)
+        return (bare.lstrip("0") or "0") if bare == n else bare
+    return collections.Counter(norm(n) for n in num.findall(s))
 
 
 def _day_month(source, target):
@@ -416,12 +480,18 @@ def _spelled(source):
     low = _plain(source).lower()
     if re.search(r"\b(?:a)?round[- ]the[- ]clock\b", low):
         out += ["24", "7"]
-    for w in re.findall(r"[a-z]+(?:-[a-z]+)?", low):
+    words = re.findall(r"[a-z]+(?:-[a-z]+)?", low)
+    short = len(words) <= 3
+    for w in words:
         parts = w.split("-")
         for part in parts:
             out += IMPLIED.get(part, ())
             if part in MONTHS:
                 out.append(str(MONTHS[part]))
+            elif short and part in MONTH_ABBR:
+                out.append(str(MONTH_ABBR[part]))
+            if part in WEEKDAYS or (short and part in WEEKDAY_ABBR):
+                out += [str(i) for i in range(1, 8)]        # the day's number, counted from Sunday or Monday
         if all(x in WORDNUM for x in parts):
             out.append(str(sum(WORDNUM[x] for x in parts)))
         elif len(parts) > 1:
@@ -459,6 +529,9 @@ def _scaled(source, target):
 def number_changes(source, target, num=NUM):
     """(lost, added): Counters of the numbers of the source the translation lacks and of those it adds, after the
     renderings a good translation may use. Both empty when the numbers match."""
+    if TIME_12.search(_plain(source)):  # "6 p.m." may be 18:00 or 18.00, "6 a.m." 06:00: hours, then minutes
+        target = re.sub(r"(?<![\d.,:])(\d{1,2})[:.]([0-5]\d)(?![\d.,:])",
+                        lambda m: m[1] if m[2] == "00" else f"{m[1]} {m[2]}", target)
     sn, on = _numbers(source.replace("24/7", " ")), _numbers(_day_month(source, target), num)
     if "24/7" in source:            # "around the clock" is a fine translation of 24/7, so is "24 hours, 365 days"
         on -= collections.Counter(("24", "7", "365"))
@@ -528,16 +601,30 @@ def check(source, target, lang, keep=(), icu=False, numbers=True):
     stray = stray_letters(source, target, lang)
     if stray:
         problems.append(f"letters of another script than {LANGS[lang][0]}: {stray[:12]}")
-    if LANGS[lang][1] != "latin" and has_letters(source):
+    same = target.strip() == source.strip()
+    if LANGS[lang][1] != "latin" and has_letters(source) and not (same and not _should_change(source, keep)):
         text = PLACEHOLDER.sub(" ", _strip_kept(target, keep))
         if is_icu:  # ICU variables and keywords stay in Latin letters
             text = ICU_KEY.sub(" ", ICU_HEAD.sub(" ", text))
+        if script_share(text, lang) > 0:  # around translated words, names and code copied from the source stay
+            # ASCII edges: in Python a Chinese or Japanese character counts as \w, so "JSON对象" has no \b in it
+            names = {w for w in re.findall(r"[A-Za-z0-9_./-]*[/_.][A-Za-z0-9_./-]*[A-Za-z/]|[A-Za-z][A-Za-z0-9]*", text)
+                     if (_name_like(w) or re.search(r"[/_.]", w))
+                     and re.search(r"(?<![A-Za-z0-9_/.])%s(?![A-Za-z0-9_/])" % re.escape(w),
+                                   PLACEHOLDER.sub(" ", source), re.I)}
+            text = re.sub(r"(?<![A-Za-z0-9_/.])(%s)(?![A-Za-z0-9_/])" % "|".join(map(re.escape, sorted(
+                names, key=len, reverse=True))), " ", text) if names else text
         share = script_share(text, lang)
         if share < 0.6:
             problems.append(f"only {share:.0%} of the letters are in {LANGS[lang][1]} script")
-    if target.strip() == source.strip() and _should_change(source, keep):
+    if same and _should_change(source, keep):
         problems.append("not translated")
     return problems
+
+
+def _name_like(word):
+    """PostgreSQL, Django, True, IPv4, URL: a capital, two of them or a digit, as names and code have"""
+    return word[0].isupper() or any(ch.isdigit() for ch in word) or sum(ch.isupper() for ch in word) >= 2
 
 
 def _strip_kept(text, keep):
@@ -564,15 +651,155 @@ def _flatten(node, path=""):
         yield path, node
 
 
+
+# ------------------------------------------------------------------------------------------------ gettext files --
+_PO_LINE = re.compile(r'^(msgctxt|msgid_plural|msgid|msgstr(?:\[\d+\])?)\s+"(.*)"\s*$')
+_PO_CONT = re.compile(r'^"(.*)"\s*$')
+_GETTEXT_CODES = {**{v: k for k, v in UNDERSCORE.items()}, "zh_Hans": "zh-cn", "zh_Hant": "zh-tw"}
+_COUNT = re.compile(r"%(\d+\$)?[di]|\{(count|n|num|number|quantity)\}|%\((count|n|num|number|quantity)\)[sd]")
+
+
+def _po_unquote(s):
+    return re.sub(r'\\(["\\nt])', lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), s)
+
+
+def po_entries(text):
+    """The entries of a .po file: dicts with msgctxt, msgid, msgid_plural, msgstr or msgstr[0], msgstr[1]...
+    Comments and obsolete (#~) entries are skipped."""
+    entries, cur, field = [], None, None
+    for line in text.splitlines() + [""]:
+        if not line.strip():
+            if cur and "msgid" in cur:
+                entries.append(cur)
+            cur, field = None, None
+            continue
+        cur = cur if cur is not None else {}
+        if line.startswith("#"):
+            continue
+        m = _PO_LINE.match(line)
+        if m:
+            field = m.group(1)
+            cur[field] = _po_unquote(m.group(2))
+        elif field and _PO_CONT.match(line):
+            cur[field] += _po_unquote(_PO_CONT.match(line).group(1))
+    return entries
+
+
+def po_language(text):
+    """The language code of a .po file from its Language: header (pt_BR -> pt, nb -> no), or None."""
+    header = next((e.get("msgstr", "") for e in po_entries(text) if e.get("msgid") == ""), "")
+    m = re.search(r"Language:\s*([\w@-]+)", header)
+    code = (m.group(1) if m else "").split("@")[0]
+    for c in (_GETTEXT_CODES.get(code), code.lower().replace("_", "-"), code.split("_")[0].lower()):
+        if c in LANGS:
+            return c
+    return None
+
+
+def plural_rule_problems(rule, lang, upto=1000):
+    """([problems], {slot: numbers 0..upto it serves}) for a Plural-Forms header value: every slot must serve numbers
+    that CLDR gives one form only."""
+    want = gettext_plural(lang)[0]
+    m = re.fullmatch(r"\s*nplurals\s*=\s*(\d+)\s*;\s*plural\s*=\s*(.+?)\s*;?\s*", rule or "")
+    if not m:
+        return [f"no usable Plural-Forms in the header; for {name(lang)} use: {want}"], {}
+    n_slots = int(m.group(1))
+    try:
+        pick = gettext.c2py(m.group(2))
+    except ValueError as e:
+        return [f"the Plural-Forms formula cannot be read ({e}); for {name(lang)} use: {want}"], {}
+    ours, cats = gettext.c2py(want.split("plural=", 1)[1].rstrip(";")), gettext_plural(lang)[1]
+    slots, forms = {i: [] for i in range(n_slots)}, {}
+    for n in range(upto + 1):
+        i = pick(n)
+        if i not in slots:
+            return [f"Plural-Forms sends {n} to msgstr[{i}], but nplurals is {n_slots}"], {}
+        slots[i].append(n)
+        forms.setdefault(i, {}).setdefault(cats[ours(n)], []).append(n)
+    problems = [f"msgstr[{i}] serves numbers that {name(lang)} gives different forms ("
+                + "; ".join(f"{c}: {_numbers_text(ns)}" for c, ns in by_cat.items()) + f"); use: {want}"
+                for i, by_cat in sorted(forms.items()) if len(by_cat) > 1]
+    return problems, slots
+
+
+def check_po(text, lang, keep=(), numbers=True):
+    """The problems of a translated .po file as [(where, [problems])], and (translated entries, untranslated)."""
+    entries = po_entries(text)
+    header = next((e.get("msgstr", "") for e in entries if e.get("msgid") == ""), "")
+    out, slots = [], {}
+    if any("msgid_plural" in e for e in entries):
+        m = re.search(r"Plural-Forms:\s*([^\n]*)", header)
+        rule_problems, slots = plural_rule_problems(m.group(1) if m else "", lang)
+        if rule_problems:
+            out.append(("Plural-Forms", rule_problems))
+    ours, cats = gettext.c2py(gettext_plural(lang)[0].split("plural=", 1)[1].rstrip(";")), gettext_plural(lang)[1]
+    done = missing = 0
+    for e in entries:
+        if e.get("msgid", "") == "":
+            continue
+        where = (e["msgctxt"] + " | " if "msgctxt" in e else "") + e["msgid"][:60].replace("\n", " ")
+        if "msgid_plural" not in e:
+            if not e.get("msgstr"):
+                missing += 1
+                continue
+            done += 1
+            problems = check(e["msgid"], e["msgstr"], lang, keep, numbers=numbers)
+        else:
+            given = [k for k in e if k.startswith("msgstr[")]
+            if not any(e[k] for k in given):
+                missing += 1
+                continue
+            done += 1
+            problems = [f"{len(given)} msgstr forms, but Plural-Forms has {len(slots)}"] if slots and len(given) != len(slots) else []
+            other_ph = set(placeholders(e["msgid_plural"]))
+            marks = [x for x in other_ph if _COUNT.fullmatch(x)] or (
+                [x for x in other_ph if re.fullmatch(r"%(\d+\$)?s|%\(\w+\)[sd]", x)] if len(other_ph) == 1 else [])
+            for i, nums in sorted(slots.items()):
+                form = e.get(f"msgstr[{i}]")
+                if not form:
+                    problems.append(f"msgstr[{i}] is empty")
+                    continue
+                p = check(e["msgid"] if 1 in nums else e["msgid_plural"], form, lang, keep, numbers=False)
+                # a form may show the count where English spells it out ("One habit" -> "%d привычка"), and a form
+                # for a single number may leave it out (Arabic "two" says it with the dual)
+                p = [x for x in p if not (x.startswith("added ") and all(ph in other_ph for ph in x[6:].split(", ")))]
+                p = [x for x in p if not (x.startswith("lost ") and len(nums) == 1 and x[5:] in marks)]
+                if marks and len(nums) >= 2 and not any(mk in form for mk in marks) and not any(x.startswith("lost ") for x in p):
+                    p.append(several_numbers_problem(cats[ours(nums[0])], nums, marks[0]))
+                problems += [f"msgstr[{i}]: {x}" for x in p]
+        if problems:
+            out.append((where, problems))
+    return out, (done, missing)
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Check a translated JSON message file against its source.")
-    p.add_argument("source")
-    p.add_argument("translated")
-    p.add_argument("--lang", required=True, help="the translation's language code (translation_checks.LANGS)")
+    p = argparse.ArgumentParser(description="Check a translated JSON message file against its source, or a translated "
+                                            "gettext .po file on its own.")
+    p.add_argument("source", help="the source JSON file, or a translated .po file")
+    p.add_argument("translated", nargs="?", help="the translated JSON file")
+    p.add_argument("--lang", help="the translation's language code (translation_checks.LANGS); a .po file's "
+                                  "Language: header is used when it is not given")
     p.add_argument("--keep", default="", help="names that must stay as written, comma-separated")
     p.add_argument("--no-numbers", action="store_true", help="do not compare the numbers of each string")
     p.add_argument("--version", action="version", version=f"translation-checks {__version__}")
     a = p.parse_args(argv)
+    keep = [k.strip() for k in a.keep.split(",") if k.strip()]
+    if a.translated is None and a.source.endswith(".po"):
+        with open(a.source, encoding="utf-8-sig") as fh:
+            text = fh.read()
+        lang = a.lang or po_language(text)
+        if lang not in LANGS or lang == "en":
+            print(f"no target language for {a.source}: give --lang (known: {', '.join(ALL)})", file=sys.stderr)
+            return 2
+        problems, (done, missing) = check_po(text, lang, keep, numbers=not a.no_numbers)
+        for where, ps in problems:
+            print(f"  {where}: {'; '.join(ps)}")
+        bad = sum(1 for where, _ in problems if where != "Plural-Forms")
+        print(f"{done} translated entries ({name(lang)}): {done - bad} fine, {bad} with problems, {missing} not "
+              f"translated" + ("; the Plural-Forms header is wrong" if any(w == "Plural-Forms" for w, _ in problems) else ""))
+        return 1 if problems else 0
+    if a.translated is None or not a.lang:
+        p.error("a JSON check needs the source, the translated file and --lang")
     if a.lang not in LANGS:
         print(f"unknown language {a.lang!r}; known: {', '.join(LANGS)}", file=sys.stderr)
         return 2
@@ -580,7 +807,6 @@ def main(argv=None):
         src = dict(_flatten(json.load(fh)))
     with open(a.translated, encoding="utf-8-sig") as fh:
         dst = dict(_flatten(json.load(fh)))
-    keep = [k.strip() for k in a.keep.split(",") if k.strip()]
     bad = 0
     for key, text in src.items():
         if key not in dst:
