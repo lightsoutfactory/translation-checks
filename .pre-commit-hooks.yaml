@@ -1,0 +1,6 @@
+- id: translation-checks
+  name: translation-checks
+  description: Check translated gettext .po files for lost placeholders, wrong plural forms, changed numbers, lost names and letters of another script.
+  entry: translation-checks
+  language: python
+  files: \.po$

@@ -63,6 +63,7 @@ A translated `.po` file is checked on its own, its msgids being the source:
 
 ```sh
 translation-checks locale/ru/LC_MESSAGES/app.po      # the language comes from its Language: header, or give --lang
+translation-checks locale/*/LC_MESSAGES/django.po    # several: English, and languages it does not know, are skipped
 ```
 
 - **The Plural-Forms rule.** The header's formula picks the msgstr slot for a number, and every number from 0 to 1000
@@ -75,6 +76,26 @@ translation-checks locale/ru/LC_MESSAGES/app.po      # the language comes from i
   msgid or msgid_plural; a slot used for several numbers shows the number (`%d`, `%(n)s`, `{count}`), and a slot for a
   single number may leave it out (Arabic says "two" with the dual).
 - Every other translated entry is checked like a JSON string. Untranslated entries are counted, not flagged.
+
+## pre-commit and CI
+
+As a [pre-commit](https://pre-commit.com) hook it checks every translated `.po` file you commit:
+
+```yaml
+repos:
+  - repo: https://github.com/lightsoutfactory/translation-checks
+    rev: v1.4.0
+    hooks:
+      - id: translation-checks
+        # args: [--keep, "Habit Garden,Pro"]
+```
+
+In CI, install it and give it the files; it exits with 1 when a file has problems:
+
+```sh
+pip install git+https://github.com/lightsoutfactory/translation-checks@v1.4.0
+translation-checks locale/*/LC_MESSAGES/*.po
+```
 
 ## Measured
 

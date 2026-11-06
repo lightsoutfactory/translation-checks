@@ -3,6 +3,9 @@
     python3 translation_checks.py locales/en.json locales/de.json --lang de [--keep "Habit Garden,Pro"]
     python3 translation_checks.py locale/ru/LC_MESSAGES/app.po [--lang ru]      a gettext file: its own msgids are the
                                                                                source, and its plural rule is checked
+    python3 translation_checks.py locale/*/LC_MESSAGES/django.po                several, as a pre-commit hook passes
+                                                                               them: English and languages it does
+                                                                               not know are skipped
 
 or, in your own pipeline:
 
@@ -51,7 +54,7 @@ import re
 import sys
 import unicodedata
 
-__version__ = "1.3.3"
+__version__ = "1.4.0"
 
 
 # code: (English name, script, plural categories)
@@ -783,11 +786,30 @@ def check_po(text, lang, keep=(), numbers=True):
     return out, (done, missing)
 
 
+def _po_report(path, lang, keep, numbers):
+    """(exit code, lines) for one translated .po file: 0 fine, 1 with problems, 2 when it is English or its language is
+    not one of LANGS (from its Language: header unless lang is given); then the lines say why."""
+    with open(path, encoding="utf-8-sig") as fh:
+        text = fh.read()
+    lang = lang or po_language(text)
+    if lang == "en":
+        return 2, ["English, the source language"]
+    if lang not in LANGS:
+        return 2, [f"no target language: give --lang (known: {', '.join(ALL)})"]
+    problems, (done, missing) = check_po(text, lang, keep, numbers=numbers)
+    lines = [f"  {where}: {'; '.join(ps)}" for where, ps in problems]
+    bad = sum(1 for where, _ in problems if where != "Plural-Forms")
+    lines.append(f"{done} translated {'entry' if done == 1 else 'entries'} ({name(lang)}): {done - bad} fine, {bad} with "
+                 f"problems, {missing} not translated" + ("; the Plural-Forms header is wrong"
+                                                         if any(w == "Plural-Forms" for w, _ in problems) else ""))
+    return (1 if problems else 0), lines
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Check a translated JSON message file against its source, or a translated "
-                                            "gettext .po file on its own.")
-    p.add_argument("source", help="the source JSON file, or a translated .po file")
-    p.add_argument("translated", nargs="?", help="the translated JSON file")
+    p = argparse.ArgumentParser(description="Check a translated JSON message file against its source, or translated "
+                                            "gettext .po files on their own.")
+    p.add_argument("files", nargs="+", metavar="FILE",
+                   help="the source JSON file and the translated one, or one or more translated .po files")
     p.add_argument("--lang", help="the translation's language code (translation_checks.LANGS); a .po file's "
                                   "Language: header is used when it is not given")
     p.add_argument("--keep", default="", help="names that must stay as written, comma-separated")
@@ -795,28 +817,36 @@ def main(argv=None):
     p.add_argument("--version", action="version", version=f"translation-checks {__version__}")
     a = p.parse_args(argv)
     keep = [k.strip() for k in a.keep.split(",") if k.strip()]
-    if a.translated is None and a.source.endswith(".po"):
-        with open(a.source, encoding="utf-8-sig") as fh:
-            text = fh.read()
-        lang = a.lang or po_language(text)
-        if lang not in LANGS or lang == "en":
-            print(f"no target language for {a.source}: give --lang (known: {', '.join(ALL)})", file=sys.stderr)
-            return 2
-        problems, (done, missing) = check_po(text, lang, keep, numbers=not a.no_numbers)
-        for where, ps in problems:
-            print(f"  {where}: {'; '.join(ps)}")
-        bad = sum(1 for where, _ in problems if where != "Plural-Forms")
-        print(f"{done} translated {'entry' if done == 1 else 'entries'} ({name(lang)}): {done - bad} fine, {bad} with problems, {missing} not "
-              f"translated" + ("; the Plural-Forms header is wrong" if any(w == "Plural-Forms" for w, _ in problems) else ""))
-        return 1 if problems else 0
-    if a.translated is None or not a.lang:
+    if all(f.endswith(".po") for f in a.files):
+        if len(a.files) == 1:
+            code, lines = _po_report(a.files[0], a.lang, keep, not a.no_numbers)
+            if code == 2:
+                print(f"{a.files[0]}: {lines[0]}", file=sys.stderr)
+                return 2
+            print("\n".join(lines))
+            return code
+        # several files, as a pre-commit hook passes them: an English file, or one in a language we do not know, is
+        # skipped there, not failed
+        worst = 0
+        for path in a.files:
+            code, lines = _po_report(path, a.lang, keep, not a.no_numbers)
+            if code == 2:
+                print(f"{path}: skipped, " + (lines[0] if lines[0].startswith("English") else
+                                               "its Language: header names none of the languages we check"))
+                continue
+            print(path)
+            print("\n".join("  " + x for x in lines))
+            worst = max(worst, code)
+        return worst
+    if len(a.files) != 2 or not a.lang:
         p.error("a JSON check needs the source, the translated file and --lang")
+    source, translated = a.files
     if a.lang not in LANGS:
         print(f"unknown language {a.lang!r}; known: {', '.join(LANGS)}", file=sys.stderr)
         return 2
-    with open(a.source, encoding="utf-8-sig") as fh:
+    with open(source, encoding="utf-8-sig") as fh:
         src = dict(_flatten(json.load(fh)))
-    with open(a.translated, encoding="utf-8-sig") as fh:
+    with open(translated, encoding="utf-8-sig") as fh:
         dst = dict(_flatten(json.load(fh)))
     bad = 0
     for key, text in src.items():

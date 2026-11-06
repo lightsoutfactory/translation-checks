@@ -6,7 +6,7 @@ import os
 import re
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 import translation_checks as t
 
@@ -250,6 +250,32 @@ class TestGettext(unittest.TestCase):
         self.assertEqual(t.po_language('msgid ""\nmsgstr "Language: pt_BR\\n"\n'), "pt")
         self.assertEqual(t.po_language('msgid ""\nmsgstr "Language: nb\\n"\n'), "no")
         self.assertEqual(t.po_language('msgid ""\nmsgstr "Language: de_DE\\n"\n'), "de")
+
+    def test_cli_on_several_po_files(self):
+        d = tempfile.mkdtemp()
+        texts = {"ru.po": RU_PO.format(rule=RU_RULE, forms=RU_FORMS),
+                 "bad.po": RU_PO.format(rule="nplurals=2; plural=(n != 1);",
+                                        forms='msgstr[0] "%(n)s привычка"\nmsgstr[1] "%(n)s привычек"'),
+                 "en.po": RU_PO.replace("Language: ru", "Language: en").format(rule=RU_RULE, forms=RU_FORMS),
+                 "eo.po": RU_PO.replace("Language: ru", "Language: eo").format(rule=RU_RULE, forms=RU_FORMS)}
+        paths = {}
+        for fname, text in texts.items():
+            paths[fname] = os.path.join(d, fname)
+            with open(paths[fname], "w", encoding="utf-8") as fh:
+                fh.write(text)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(t.main(list(paths.values())), 1)
+        self.assertIn(paths["bad.po"] + "\n    Plural-Forms: msgstr[1] serves", out.getvalue())
+        self.assertIn("  2 translated entries (Russian): 2 fine, 0 with problems, 0 not translated\n", out.getvalue())
+        self.assertIn(paths["en.po"] + ": skipped, English, the source language", out.getvalue())
+        self.assertIn(paths["eo.po"] + ": skipped, its Language: header names none of the languages we check",
+                      out.getvalue())
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(t.main([paths["ru.po"], paths["en.po"], paths["eo.po"]]), 0,
+                             "a pre-commit run does not fail over files it skips")
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(t.main([paths["eo.po"]]), 2, "one file in a language we do not know is an error")
 
 if __name__ == "__main__":
     unittest.main()
