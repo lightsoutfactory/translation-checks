@@ -71,7 +71,8 @@ translation-checks locale/*/LC_MESSAGES/django.po    # several: English, and lan
   21 in one slot, where Russian says "2 привычки", "5 привычек" and "21 привычка"; the check names the numbers that
   clash and the rule to use. The rules for all 42 languages, checked against CLDR for every number from 0 to 10,000,
   are in `GETTEXT_PLURALS`, and a [field note](https://lightsoutfactory.ai/field-notes/gettext-plural-forms/) shows
-  them in a table.
+  them in a table. The header for every language CLDR has plural rules for, and a checker for a single header in
+  the browser, are at [Plural-Forms for every language](https://lightsoutfactory.ai/tools/plural-forms/).
 - **Every plural entry** has a msgstr for each slot, none of them empty. Each form passes the checks above against
   msgid or msgid_plural; a slot used for several numbers shows the number (`%d`, `%(n)s`, `{count}`), and a slot for a
   single number may leave it out (Arabic says "two" with the dual).
