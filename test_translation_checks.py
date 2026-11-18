@@ -53,6 +53,27 @@ class TestChecks(unittest.TestCase):
         self.assertEqual(t.check("Save", "Сачувај", "sr"), [])
         self.assertEqual(t.check("Größe", "Größe", "de", keep=["Größe"]), [])
 
+    def test_mixed_words(self):
+        # slips our own sites had published, all past the checks of 1.4: a Cyrillic "О" in a Latin word, a Latin "T"
+        # in Russian, an English word glued to a Bulgarian one, a Latin "F" in Greek, Macedonian "сè" with a Latin "è"
+        self.assertEqual(t.check("Odds on the flop", "Оdds за флопа", "bg"), ["letters of two alphabets in one word: Оdds"])
+        self.assertEqual(t.check("Wagering requirements", "Tребования по обороту", "ru"),
+                         ["letters of two alphabets in one word: Tребования"])
+        self.assertEqual(t.mixed_words("Media placements", "медийниplacements"), ["медийниplacements"])
+        self.assertEqual(t.check("Tax", "Fόρος", "el"), ["letters of two alphabets in one word: Fόρος"])
+        self.assertEqual(t.mixed_words("Everything is still here", "Сè уште е тука"), ["Сè"])
+        self.assertEqual(t.check("Open the app", "Отворите aпликацију", "sr"),
+                         ["letters of two alphabets in one word: aпликацију"])
+        # fine: a word the source or a kept term has, units, compounds with a hyphen, escapes and entities next to words
+        self.assertEqual(t.check("Open Яndex", "Открыть Яndex", "ru"), [])
+        self.assertEqual(t.check("Search", "Поиск в Яndex", "ru", keep=["Яndex"]), [])
+        self.assertEqual(t.check("Resistance: 5 kΩ, 3 μm", "Сопротивление: 5 kΩ, 3 μm", "ru"), [])
+        self.assertEqual(t.check("USB cable for iOS", "USB-кабель для iOS", "ru"), [])
+        self.assertEqual(t.check("Line one\\nLine two", "Строка один\\nСтрока два", "ru"), [])
+        self.assertEqual(t.check("Hello&nbsp;world", "Привет&nbsp;мир", "ru"), [])
+        # a Cyrillic letter in a Finnish word is told once, as a stray letter
+        self.assertEqual(t.check("card case", "korttikotelо", "fi"), ["letters of another script than Finnish: о"])
+
     def test_numbers(self):
         self.assertEqual(t.check("Free for 14 days", "14 Tage kostenlos", "de"), [])
         self.assertEqual(t.check("Free for 14 days", "41 Tage kostenlos", "de"), ["numbers changed: lost 14; added 41"])

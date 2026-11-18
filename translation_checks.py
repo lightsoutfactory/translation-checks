@@ -31,6 +31,9 @@ The checks, per string:
   in a Romanian sentence ("valori植入"), Thai inside Khmer or a Cyrillic "о" inside a Finnish word. Latin letters are
   always allowed; Chinese, Japanese and Korean are not checked, Serbian and Punjabi only for Chinese, Japanese and
   Korean letters;
+- no word that mixes alphabets: Latin, Cyrillic and Greek letters in one word, unless the source or a term you keep
+  has that word ("Оdds" with a Cyrillic О, "Tребования" with a Latin T, an English word glued to a Bulgarian one,
+  "медийниplacements"); units such as kΩ and μm pass;
 - not empty, and not longer than 4 times the source (plus 20 characters);
 - written in the target language's script: at least 60% of the letters, for languages that do not use Latin letters
   (names, code and paths copied from the source do not count; a single word or unit kept as it is passes);
@@ -54,7 +57,7 @@ import re
 import sys
 import unicodedata
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 
 # code: (English name, script, plural categories)
@@ -134,6 +137,10 @@ STRAY_SCRIPTS = {**{k: v for k, v in SCRIPTS.items() if k != "latin"}, "cyrillic
                  "tibetan": [(0xF00, 0xFFF)], "myanmar": [(0x1000, 0x109F)], "georgian": [(0x10A0, 0x10FF)],
                  "thaana": [(0x780, 0x7BF)]}
 EAST_ASIAN = ("cjk", "hangul")
+# the alphabets whose letters look alike: a word may not mix them ("Оdds", "Tребования", "Fόρος")
+MIXABLE = {"latin": SCRIPTS["latin"], "cyrillic": [(0x400, 0x52F)], "greek": SCRIPTS["greek"]}
+UNIT_WORD = re.compile(r"[A-Za-z]{0,2}[\u00b5\u03bc\u03a9][A-Za-z]{0,2}")   # μm, µs, kΩ, MΩ
+ESCAPE = re.compile(r"\\[nrt]|&[A-Za-z]+;|&#x?[0-9A-Fa-f]+;")              # \n, &nbsp;, &#160; next to a word
 # written in more than one script (Serbian in Latin letters, Punjabi in Shahmukhi): only Chinese, Japanese and Korean
 # letters are stray there
 MULTI_SCRIPT = {"sr", "pa"}
@@ -369,6 +376,32 @@ def stray_letters(source, target, lang):
                     found.add(ch)
                 break
     return "".join(sorted(found))
+
+
+def _alphabet(ch):
+    o = ord(ch)
+    return next((name for name, ranges in MIXABLE.items() if any(a <= o <= b for a, b in ranges)), "")
+
+
+def _words(s):
+    return re.findall(r"[^\W\d_]+", unicodedata.normalize("NFC", ESCAPE.sub(" ", PLACEHOLDER.sub(" ", s))))
+
+
+def mixed_words(source, target, keep=()):
+    """Words of the translation with letters of two of the Latin, Cyrillic and Greek alphabets, which no reader
+    writes: a Cyrillic "О" in "Оdds", a Latin "T" in Russian "Tребования", an English word glued to a Bulgarian one
+    ("медийниplacements"), Macedonian "сè" with the Latin "è" where the alphabet has "ѐ". Words the source or a kept
+    term has, such as a brand written that way, and units such as kΩ and μm pass."""
+    allowed = set(_words(source))
+    for term in keep:
+        allowed.update(_words(term))
+    found = []
+    for w in _words(target):
+        if w in allowed or w in found or UNIT_WORD.fullmatch(w):
+            continue
+        if len({_alphabet(ch) for ch in w} - {""}) > 1:
+            found.append(w)
+    return found
 
 
 def _lost_terms(source, target, keep):
@@ -615,6 +648,9 @@ def check(source, target, lang, keep=(), icu=False, numbers=True):
     stray = stray_letters(source, target, lang)
     if stray:
         problems.append(f"letters of another script than {LANGS[lang][0]}: {stray[:12]}")
+    mixed = [w for w in mixed_words(source, target, keep) if not set(w) & set(stray)]   # a stray letter is told once
+    if mixed:
+        problems.append("letters of two alphabets in one word: " + ", ".join(mixed[:3]))
     same = target.strip() == source.strip()
     if LANGS[lang][1] != "latin" and has_letters(source) and not (same and not _should_change(source, keep)):
         text = PLACEHOLDER.sub(" ", _strip_kept(target, keep))

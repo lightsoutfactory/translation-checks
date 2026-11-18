@@ -14,6 +14,8 @@ check("Hello, {name}!", "Hallo!", "de")              # ['lost {name}']
 check("Free for 14 days", "41 Tage kostenlos", "de")  # ['numbers changed: lost 14; added 41']
 check("Planted values show up.", "Apar valori植入.", "ro")
 # ['letters of another script than Romanian: 入植']
+check("Wagering requirements", "Tребования по обороту", "ru")
+# ['letters of two alphabets in one word: Tребования']
 ```
 
 ## Install
@@ -45,6 +47,12 @@ Or copy `translation_checks.py` into your project: it is one file with no depend
   Thai on a Khmer page, or types a Cyrillic "о" inside a Finnish word. Letters the source has, and Latin letters, are
   always allowed. Chinese, Japanese and Korean are not checked; Serbian and Punjabi only for Chinese, Japanese and
   Korean letters.
+- **No word that mixes alphabets:** Latin, Cyrillic and Greek letters look alike, and a model sometimes writes one
+  for another inside a word: "Оdds" with a Cyrillic О, "Tребования" with a Latin T, "Fόρος" in Greek, or an English
+  word glued to a Bulgarian one ("медийниplacements"). A reader sees nothing wrong; search, spell checking and
+  find-in-page treat it as another word. A word the source has, or a term you keep, passes, and so do units such as
+  kΩ and μm. To see them in any text, and get it back in one alphabet, there is a
+  [browser checker](https://lightsoutfactory.ai/tools/mixed-alphabets/).
 - **Names you keep** (your product, brands) are still there as written, where the source has them as words
   ("Pressing" does not contain the name "Press"). A translation may join a name into a compound: "Store-Dock-Kits".
 - **The right script:** at least 60% of the letters in Cyrillic, Arabic, Hebrew, Greek, Armenian, Ethiopic, CJK,
@@ -85,7 +93,7 @@ As a [pre-commit](https://pre-commit.com) hook it checks every translated `.po` 
 ```yaml
 repos:
   - repo: https://github.com/lightsoutfactory/translation-checks
-    rev: v1.4.0
+    rev: v1.5.0
     hooks:
       - id: translation-checks
         # args: [--keep, "Habit Garden,Pro"]
@@ -94,7 +102,7 @@ repos:
 In CI, install it and give it the files; it exits with 1 when a file has problems:
 
 ```sh
-pip install git+https://github.com/lightsoutfactory/translation-checks@v1.4.0
+pip install git+https://github.com/lightsoutfactory/translation-checks@v1.5.0
 translation-checks locale/*/LC_MESSAGES/*.po
 ```
 
@@ -104,7 +112,7 @@ On the sites we run, every translation goes through checks like these before it 
 
 - **False alarms:** 0 among the 576,120 page translations those checks accepted, in 42 languages, and 0 among the
   897 ICU plural translations in Android's own framework strings (android-36, 39 of these languages).
-- **On someone else's files:** Django 5.2's own `.po` files in 39 of these languages, translated by people: 31,879
+- **On someone else's files** (version 1.4.0): Django 5.2's own `.po` files in 39 of these languages, translated by people: 31,879
   translated entries, 475 flagged (1.5%). By kind: 234 plural entries whose number of forms does not match their
   file's Plural-Forms (the Spanish, French, Italian and Portuguese headers say two forms where the entries carry
   three, the Hebrew header four where they carry three); 125 with English left in place (Thai "log entry", Greek "work
@@ -116,6 +124,10 @@ On the sites we run, every translation goes through checks like these before it 
   they are (URL, IPv4, `%s KB`), whole hours as 18:00, calendar abbreviations as numbers (Feb. as 2月) and ordinals as
   digits (the twelfth month as 12ヶ月目).
 - **Letters of another script:** caught in all 5,121 translations our checks refused for them.
+- **Words that mix alphabets** (new in 1.5.0): 363 of the 613,570 page translations our 11 sites had published had
+  one, every one let through by the checks before it and every one a real slip. 173 are like "Оdds", "Tребования",
+  "Wиграли" and "наscratch", in Macedonian, Bulgarian, Serbian, Greek, Russian and Ukrainian; 190 are Macedonian
+  "сè" and "нè" written with the Latin "è", where the Macedonian alphabet has its own "ѐ".
 - **Numbers:** caught in 69,957 of the 83,388 translations our checks refused over numbers. Version 1.3.0 lets 6,782
   of them through that 1.2.0 caught; we read them by kind, and they are the same numbers written in a way our sites'
   own checks do not know: ordinals and fractions in digits ("the twelfth month" as 12ヶ月目, "one-fifth" as 1/5 or 20%),
